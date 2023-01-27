@@ -445,7 +445,7 @@ ct_partner_data <-
   # ct_partner_data <-rbind(ct_partner_data,pf_df)
 
 
-
+# 
 
 # add component eligibilty for Nobu 
   ct_partner_data <-
@@ -800,13 +800,7 @@ full_join(
       select(iso3,year,component,category,source,name,value,indicator) 
       
       
-      # add 6 year averages
-      ct_reg_partner_data %>% 
-        group_by(iso3,name) %>% 
-        filter(year>=2016 & year <=2021) %>% 
-        summarise_at(vars(value),sum,na.rm = TRUE) %>% 
-        ungroup() %>% 
-        mutate(year="2016-2021")
+
       
       
       
