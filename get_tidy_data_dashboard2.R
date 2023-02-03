@@ -285,31 +285,18 @@ pip_data_6ya_m <-# malaria eligible-  all indicators use same 6 year period
   
   
 pip_data_6ya_h <-
-    full_join(
-    
+   
     # hiv eligible - all indicators use same 6 year period except HIV211
       pip_data %>%
       filter(elig_hiv==1 | nchar(iso3>3)) %>% #use nchar to also keep in regional sums for single years calculated in previous step
       group_by(iso3) %>% 
       select(iso3,year,contains("HI")) %>% 
-      select(-c("HIV211")) %>% 
+      # select(-c("HIV211")) %>% 
       filter(year>=av_start_year & year <=av_end_year) %>% 
       summarise(across(where(is.numeric),sum,na.rm=TRUE)) %>%
       mutate(across(where(is.numeric), ~.x/6,na.rm=TRUE)) %>%
       ungroup() %>% 
       mutate(year=paste0(av_start_year,"-",av_end_year))
-      ,
-      # HIV211
-      pip_data %>%
-        filter(elig_hiv==1 | nchar(iso3>3)) %>% #use nchar to also keep in regional sums for single years calculated in previous step
-        group_by(iso3) %>% 
-        select(iso3,year,HIV211) %>% 
-        filter(year>=lag1_av_start_year & year <=lag1_av_end_year) %>% 
-        summarise(across(where(is.numeric),sum,na.rm=TRUE)) %>%
-        mutate(across(where(is.numeric), ~.x/6,na.rm=TRUE)) %>%
-        ungroup() %>% 
-        mutate(year=paste0(lag1_av_start_year,"-",lag1_av_end_year))
-               )
       
     # tb eligible all indicators except those needing lagging 
 pip_data_6ya_t <- 
@@ -361,7 +348,7 @@ pip_data <- full_join(pip_data %>% mutate(year=as.character(year)),pip_data_6ya)
 pip_data %>% filter(iso3=="TZA"
             |iso3=="Central Africa")
 
-pip_data %>% filter(iso3=="TZA" & (year =="2016-2021"| year =="2015-2020" | year =="2014-2019"))
+pip_data %>% filter(iso3=="TZA" & ( year =="2015-2020"))
 
 #  STEP 8 calculate coverage from n / ds at 1. country, 2. country 6ya, 3. department , 4. department6ya , 5. region, 6. region 6ya  ####
   
@@ -415,7 +402,6 @@ t <-
                  id=="TB" & year=="2016-2021") %>%
         select(-(id)) %>% #drop the id col
         pivot_wider(names_from = name,values_from = value) %>%
-        # mutate(p_tb_tx_succ=TB273/TB269*100) %>%
         mutate(p_tb_hiv_art=(TB190/TB202)*100)  %>% 
         mutate(p_hiv_tb_tpt=ifelse(is.na(TB643/TB642),(TB648/TB656)*100,(TB643/TB642)*100)) %>% 
         mutate(p_tb_tx_cov=(TB81/TB11)*100) %>% 
@@ -466,6 +452,17 @@ pip_data <-
 
 
 
+# apply a fix to add HIV211 for 2020 only at country and regional level  
+
+# left_join(
+# pip_data %>% filter(name!="HIV211"),
+# extractPIP(indicators = "HIV211",yearFrom = 2020,yearTo = 2020) %>%
+#   select(ISOCountryCode,Year,Numerator) %>%
+#   rename(iso3=ISOCountryCode,year=Year,value=Numerator) %>% mutate(name="HIV211")
+# )
+
+
+
 # 
 # #  STEP 9 produce outputs ####
 #   
@@ -477,7 +474,9 @@ pip_data <-
 pip_data %>% 
   mutate(name=ifelse(name=="TB_n_mdr_tx","n_mdr_tx",name))  %>% 
   # also remove OST regional summs as these are not accurate as n/ds are not published HIV893
-  mutate(Value=ifelse(name=="HIV893" & nchar(iso3)>3,NA,value)) 
+  mutate(value=ifelse(name=="HIV893" & nchar(iso3)>3,NA,value)) 
+
+
 
 
 # apply the list of specified years and indicators to display
@@ -522,7 +521,7 @@ pip_data %>%
 #   right_join(indicator_year_list_db_2 %>% select(component,source))%>% 
   rename_with(str_to_title) %>%
   rename(ISO3=Iso3) %>% 
-  mutate(Category="Actual") %>% 
+  mutate(Category=ifelse(nchar(Year)==4,"Actual","Annual average of actual")) %>% 
   mutate(DataType="Point") %>% 
   select(ISO3,Year,Category,Name,Value,Source,Component,DataType)
   
