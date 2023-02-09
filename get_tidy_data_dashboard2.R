@@ -526,6 +526,12 @@ pip_data %>%
   right_join(indicator_year_list_db_2)
 
 
+# suppress annual averages for the three key populations 
+
+pip_data <- pip_data %>% 
+  mutate(value=ifelse(id=="p_fsw_cov2016-2021",NA,value)) %>%
+  mutate(value=ifelse(id=="p_msm_cov2016-2021",NA,value)) %>%
+  mutate(value=ifelse(id=="p_pwid_cov2016-2021",NA,value)) 
 
 # add back in eligibility criteria
 pip_data <-
@@ -568,7 +574,6 @@ pip_data %>%
   
   # mikaela names 
 # ISO3	Year	Category	Name	Value	Source	Component	TargetSwap	DataType	Indicator	Position
-
 
 
 
