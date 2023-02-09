@@ -3,7 +3,7 @@ require(tidyverse)
 require(GlobalFundr)
 require(readxl)
 
-#  a. AABOUT ####
+#  a. ABOUT ####
 # script to get and tidy inputs to the CT input data tool mainly partner data from PIP plus some data on key pops directly from John Stover Avenir health
 
 # results are fed into ct_input_data_pivot_reader.xlsx (refresh the load tab refresh)
@@ -14,8 +14,9 @@ require(readxl)
 # use partner_data_lookup.csv to define indicator display names and the order of the indicators on the use dashboard 
 
 # location of final dashboard
-# https://analytics.theglobalfund.org/#/views/CTInsightsSurveyonStrategicTargetModellingfor2023-25/Startpage?:display_count=n&:iid=1&:origin=viz_share_link&:showAppBanner=false&:showVizHome=n
+# https://analytics.theglobalfund.org/#/views/CTInsightsSurveyonStrategicTargetModellingfor2023-28ProjectionCheck/Regionalview?:display_count=n&:iid=1&:origin=viz_share_link&:showAppBanner=false&:showVizHome=n
 
+# due diligence with Mehran signed off 9 Feb 2023, last fix was MH uncapping n_mdr_tx
 
 # TO DO ####
 # validate malaria330 and p_iptp3_all 
@@ -32,6 +33,8 @@ in_ <- paste0(getwd(),"/in_/")
 #  c. DEFINE SWITCHBOARD PARAMETERS TO UPDATE EACH USE OF SCRIPT 
 #  STEP 1 . READ IN SOURCE FILES, LOOK UP TABLES ETC ####
 
+# for reference / audit write out a copy of the source data file
+save_pip <- 1
 
 # define 6 year average periods by indicator 
 
@@ -58,24 +61,28 @@ lag1_av_end_year
 lag2_av_start_year
 lag2_av_end_year
 
-#   1.a get country and iso3 names ####
+#   1.a  get country and iso3 names ####
 geog <- GlobalFundr::extractGeographyReference() %>% select(ISO3,GeographyName)
 # get geog from global environment or if not there, from online
 
-#   1.b also get GF GlobalFundRegions_list 
+#   1.b also get GF GlobalFundRegions_list and exclude zanzibar as it only has data for malaria 
 GlobalFundRegions_list <- GlobalFundr::extractGeographyReference() %>% 
-  select(ISO3,GlobalFundRegion,GlobalFundDepartment)
+  select(ISO3,GlobalFundRegion,GlobalFundDepartment) %>% 
+  filter(ISO3!="QNB")
+
+
+
 # 5 gf departments and 10 gf regions
 
 
-#   1.b. select the indicators to display in the final dashboard data ####
+#   1.b. select the indicators and years to display in the final dashboard data ####
 
 indicator_year_list_db_2 <-
   read_csv("in_/indicator_year_list_db_2.csv") %>% select(id,component,source)
 
 
 
-#   1.c read in eligibility look up table  ####
+#   1.c  read in eligibility look up table  ####
 elig_lookup <- extractEligibilityList(year = 2022) %>%
                 rename_with(tolower) %>%
                 select(iso3,component,eligibility) %>%
@@ -85,18 +92,26 @@ elig_lookup <- extractEligibilityList(year = 2022) %>%
                 mutate(malaria=ifelse(malaria=="Transition Funding", "Yes", malaria)) %>%
                 mutate(eligible=ifelse(`hiv/aids`=="Yes"|tuberculosis=="Yes"|malaria=="Yes","Yes",NA))
 
-#   1.d get PIP data ####
+#   1.d. get key populations n and d#### 
+key_pops <-
+  read_csv("in_/hiv_richard_KP.csv") %>% 
+   rename_with(tolower)  %>% 
+   select(iso3,year,fsw_reached,fsw_pop,msm_reached,msm_pop,pwid_reached,pwid_pop) %>% 
+  rename(HIVn_fsw=fsw_reached,HIVd_fsw=fsw_pop,HIVn_msm=msm_reached,HIVd_msm=msm_pop,HIVn_pwid=pwid_reached,HIVd_pwid=pwid_pop)
+
+  
+#   1.e  get PIP data ####
 pip_data <-
   # can use offline copy of pip for working offline
   # read.csv("~/__SI/_2023-2028 Strategic target setting/partner input data for CT review tool/data/out/unprocessed_pip_2022-11-22.csv")
 
   extractPIP(indicators = c(
-    "HIV163","HIV46","HIV186","HIV183","HIV417","HIV437","HIV211","HIV440","HIV893",
+    "HIV163","HIV46","HIV186","HIV183","HIV417","HIV437","HIV211","HIV440",
                             "TB645","TB1","TB11","TB64",
-                            "TB81","TB190","TB202","TB289","TB285","TB85", "TB84","TB239","TB269","TB285",
+                            "TB81","TB190","TB202","TB289","TB285","TB85", "TB84","TB239","TB269","TB285","TB638",
                             "TB273","TB289","TB641","TB639","TB643","TB683","TB646","TB642","TB648","TB656","TB273","TB269","TB495","TB640",
                             "Malaria1", "Malaria32","Malaria7", # Malaria32 source annex 5G WMR col D ' At risk low and high'
-                            "Malaria24", "Malaria48",
+                            "Malaria24", "Malaria48", "Malaria13",
                             "Malaria39","Malaria41", "Malaria45","Malaria31","Malaria189","Malaria330","Malaria327","Malaria325","Malaria326",
                             "Malaria186","Malaria343", "Malaria454","Malaria334"
                             )) %>%
@@ -111,19 +126,37 @@ pip_data <-
   rename_with(tolower) %>%
   filter(year<=av_end_year&year>=lag2_av_start_year) 
 
-# for reference / audit write out a copy of the source data file
-save_pip <- 0
-if(save_pip==1) {
-  write.csv(raw_PIP_data,file = paste0(out,"raw_PIP_data",Sys.Date(),".csv"),row.names = FALSE)
-  print(paste0("A copy of PIP was written to",out,"raw_PIP_data",Sys.Date(),".csv"))
-}
+
+#   1.f. get OST coverage and use PIP name for it and join it to the rest of PIP data #### 
+ost_cov<-
+  read_csv("in_/ost_for_Richard_4feb2023version.csv", skip = 3) %>% 
+  select(1,4) %>% 
+  rename("iso3"=1,"value"=2) %>% 
+  filter(iso3!="Grand Total") %>% 
+  mutate(name="HIV893") %>% 
+  mutate(year=2021) %>% 
+  mutate(year=as.character(year)) %>% 
+  mutate(value=ifelse(value==0,NA,value)) %>% 
+  mutate(value=as.numeric(value))
+
+pip_data <- 
+full_join(ost_cov,pip_data)
+
+
+
 
 #  STEP 2 obtain iso3 level n/d for all needed indicators  ####
+
+# join in the key pops data
+pip_data <- 
+rbind(
+pip_data,
+key_pops %>% pivot_longer(names_to = "name",values_to = "value",3:8))
 
 # back calculate the country level ITN use and access
 
 
-pip_data <- 
+pip_data <-
   pip_data %>% 
   pivot_wider(names_from = name,values_from = value) %>% 
 
@@ -132,10 +165,18 @@ pip_data <-
   mutate(Malaria186_n=Malaria186/100*Malaria32) %>% 
   mutate(Malaria189_n=Malaria189/100*Malaria32) %>% 
   # for p_mdr_tx use varying n/d per year 
+  
+  mutate(TB638=ifelse(is.na(TB638),0,TB638)) %>%
   mutate(TB_n_mdr_tx=ifelse(year<=2019,TB85,TB641+TB639)) %>% 
-  mutate(TB_d_mdr_tx=ifelse(year<=2019,TB84,TB640)) %>% 
-  mutate(year=as.numeric(year))
+  mutate(TB_d_mdr_tx=ifelse(year<=2019,TB84,TB640+TB638)) %>% 
+  mutate(year=as.numeric(year)) %>% 
+  mutate(HIV211=ifelse(HIV211==0,NA,HIV211))  
+  
 
+if(save_pip==1) {
+  write.csv(raw_PIP_data,file = paste0(out,"raw_PIP_data",Sys.Date(),".csv"),row.names = FALSE)
+  print(paste0("A copy of PIP was written to",out,"raw_PIP_data",Sys.Date(),".csv"))
+}
                                                                               
 #  STEP 3 add eligibility criteria ####
 
@@ -265,7 +306,8 @@ regions_pip_data <-
 
 #  STEP 6 join country and region level n / ds ] ####
 
-pip_data <- 
+
+pip_data <-
   full_join(pip_data, regions_pip_data)
 # regional sums matching to this point pip_data2023-01-31_for regional checks.xlsx
 
@@ -278,39 +320,40 @@ pip_data_6ya_m <-# malaria eligible-  all indicators use same 6 year period
   group_by(iso3) %>% 
   select(iso3,year,contains("MA")) %>% 
   filter(year>=av_start_year & year <=av_end_year) %>% 
-  summarise(across(where(is.numeric),sum,na.rm=TRUE)) %>%
-  mutate(across(where(is.numeric), ~.x/6,na.rm=TRUE)) %>%
+  # summarise(across(where(is.numeric),sum,na.rm=TRUE)) %>%
+  summarise(across(where(is.numeric), ~mean(.x ,na.rm=TRUE)) %>% 
+  # mutate(across(where(is.numeric), ~.x/6,na.rm=TRUE)) %>%
   ungroup() %>% 
-  mutate(year=paste0(av_start_year,"-",av_end_year))
+  mutate(year=paste0(av_start_year,"-",av_end_year)))
   
   
 pip_data_6ya_h <-
    
-    # hiv eligible - all indicators use same 6 year period except HIV211
+    # hiv eligible - all indicators use same 6 year period 
       pip_data %>%
+      # filter(iso3=="SSD") %>%
       filter(elig_hiv==1 | nchar(iso3>3)) %>% #use nchar to also keep in regional sums for single years calculated in previous step
       group_by(iso3) %>% 
       select(iso3,year,contains("HI")) %>% 
-      # select(-c("HIV211")) %>% 
       filter(year>=av_start_year & year <=av_end_year) %>% 
-      summarise(across(where(is.numeric),sum,na.rm=TRUE)) %>%
-      mutate(across(where(is.numeric), ~.x/6,na.rm=TRUE)) %>%
+      # summarise(across(where(is.numeric),sum,na.rm=TRUE)) %>%
+      summarise(across(where(is.numeric), ~mean(.x ,na.rm=TRUE)) %>%
+      # mutate(across(where(is.numeric), ~.x/6,na.rm=TRUE)) %>%
       ungroup() %>% 
-      mutate(year=paste0(av_start_year,"-",av_end_year))
+      mutate(year=paste0(av_start_year,"-",av_end_year)))
       
-    # tb eligible all indicators except those needing lagging 
-pip_data_6ya_t <- 
+#     # tb eligible all indicators except those needing lagging 
+pip_data_6ya_t <-
       full_join(
-      full_join(     
+      full_join(
       pip_data %>%
       filter(elig_tb==1| nchar(iso3>3)) %>% 
       group_by(iso3) %>% 
       select(iso3,year,contains("TB"),-c("TB289","TB285","TB273","TB269")) %>% 
       filter(year>=av_start_year & year <=av_end_year) %>% 
-      summarise(across(where(is.numeric),sum,na.rm=TRUE)) %>%
-      mutate(across(where(is.numeric), ~.x/6,na.rm=TRUE)) %>%
+      summarise(across(where(is.numeric), ~mean(.x, na.rm=TRUE)) %>%  
       ungroup() %>% 
-      mutate(year=paste0(av_start_year,"-",av_end_year)),
+      mutate(year=paste0(av_start_year,"-",av_end_year))),
       
       # tb eligible all indicators lagging by t-1 for p_tb_tx_succ
       pip_data %>%
@@ -318,10 +361,11 @@ pip_data_6ya_t <-
         group_by(iso3) %>% 
         select(iso3,year,TB289,TB285,elig_tb) %>% 
         filter(year>=lag1_av_start_year & year <=lag1_av_end_year) %>% 
-        summarise(across(where(is.numeric),sum,na.rm=TRUE)) %>%
-        mutate(across(where(is.numeric), ~.x/6,na.rm=TRUE)) %>%
+        # summarise(across(where(is.numeric),sum,na.rm=TRUE)) %>%
+        # mutate(across(where(is.numeric), ~.x/6,na.rm=TRUE)) %>%
+        summarise(across(where(is.numeric), ~mean(.x, na.rm=TRUE)) %>%
         ungroup() %>% 
-        mutate(year=paste0(lag1_av_start_year,"-",lag1_av_end_year))),
+        mutate(year=paste0(lag1_av_start_year,"-",lag1_av_end_year)))),
       
       # tb eligible all indicators lagging by t-1 for p_mdr_tb_tx_succ
       pip_data %>%
@@ -329,10 +373,11 @@ pip_data_6ya_t <-
         group_by(iso3) %>% 
         select(iso3,year,TB273,TB269,elig_tb) %>% 
         filter(year>=lag2_av_start_year & year <=lag2_av_end_year) %>% 
-        summarise(across(where(is.numeric),sum,na.rm=TRUE)) %>%
-        mutate(across(where(is.numeric), ~.x/6,na.rm=TRUE)) %>%
+        # summarise(across(where(is.numeric),sum,na.rm=TRUE)) %>%
+        # mutate(across(where(is.numeric), ~.x/6,na.rm=TRUE)) %>%
+        summarise(across(where(is.numeric), ~mean(.x, na.rm=TRUE)) %>%
         ungroup() %>% 
-        mutate(year=paste0(lag2_av_start_year,"-",lag2_av_end_year))
+        mutate(year=paste0(lag2_av_start_year,"-",lag2_av_end_year)))
         )
    
 
@@ -365,28 +410,34 @@ mh <-
   full_join(
    
     pip_data %>% 
-     mutate(id=substr(name,1,2)) %>% 
-      filter(id=="Ma" & year==2021 |
-             id=="Po" & year==2021 |
+      mutate(id=substr(name,1,2)) %>% 
+      filter(id=="Ma" & year >=2019 |
+             # id=="Po" & year==2021 |
              id=="Ma"& year=="2016-2021") %>% 
      select(-id) %>% 
       pivot_wider(names_from = name,values_from = value) %>%
-      mutate(p_mal_parasitic=((Malaria39+Malaria41)/Malaria45)*100) %>% 
-      mutate(p_iptp_3=(Malaria330*Malaria327/100)/(Malaria454*Malaria327/100)) %>%
-      mutate(p_itn_access=(Malaria186_n/Malaria32)*100) %>% 
-      mutate(p_itn_use=(Malaria189_n/Malaria32)*100)
+      group_by(iso3,year) %>% 
+      mutate(p_mal_parasitic= sum(Malaria39,Malaria41,na.rm = TRUE)/Malaria45*100) %>% 
+      ungroup() %>%      
+      mutate(p_iptp_3=((Malaria330/100*Malaria327)/(Malaria454/100*Malaria327))*100) %>%
+      mutate(p_itn_access=(Malaria189_n/Malaria32)*100) %>% 
+      mutate(p_itn_use=(Malaria186_n/Malaria32)*100)
       ,
       pip_data %>% 
       mutate(id=substr(name,1,2)) %>% 
-      filter(id=="HI" & year==2021 |
-             id=="Po" & year==2021 |
+      filter(id=="HI" & year>=2019 |
+             # id=="Po" & year==2021 |
               id=="HI" & year=="2016-2021") %>% 
       select(-id) %>% 
       pivot_wider(names_from = name,values_from = value) %>% 
       mutate(p_art_cov=(HIV163/HIV46)*100) %>% 
-      mutate(p_vls_sup=(HIV437/HIV46)*100) %>% 
+      mutate(p_vls_sup=(HIV437/HIV163)*100) %>% 
       mutate(p_kos=(HIV440/HIV46)*100) %>% 
-      mutate(p_pmtct_cov=(HIV186/HIV183)*100)   
+      mutate(p_pmtct_cov=(HIV186/HIV183)*100)   %>% 
+    # calculate coverage by key population 
+      mutate(p_fsw_cov=(HIVn_fsw/HIVd_fsw)*100) %>% 
+      mutate(p_msm_cov=(HIVn_msm/HIVd_msm)*100) %>%
+      mutate(p_pwid_cov=(HIVn_pwid/HIVd_pwid)*100) 
       )
 
 # then process tb calculated fields in order of year used for calculation
@@ -397,15 +448,16 @@ t <-
       # Tb calculated fields that use latest year (2021)
       pip_data %>% 
         mutate(id=substr(name,1,2)) %>% 
-        filter(id=="TB" & year==2021 |
-                 id=="Po" & year==2021 |
+        filter(id=="TB" & year>=2019 |
+                 # id=="Po" & year==2021 |
                  id=="TB" & year=="2016-2021") %>%
         select(-(id)) %>% #drop the id col
         pivot_wider(names_from = name,values_from = value) %>%
+        select(-(c("TB289","TB285"))) %>% 
         mutate(p_tb_hiv_art=(TB190/TB202)*100)  %>% 
         mutate(p_hiv_tb_tpt=ifelse(is.na(TB643/TB642),(TB648/TB656)*100,(TB643/TB642)*100)) %>% 
         mutate(p_tb_tx_cov=(TB81/TB11)*100) %>% 
-        mutate(p_mdr_tx=ifelse(TB_n_mdr_tx/TB_d_mdr_tx>1,1,TB_n_mdr_tx/TB_d_mdr_tx)) 
+        mutate(p_mdr_tx=ifelse((TB_n_mdr_tx/TB_d_mdr_tx)*100>100,100,(TB_n_mdr_tx/TB_d_mdr_tx)*100)) 
       
       ,
       
@@ -413,7 +465,7 @@ t <-
       # 2020  
       pip_data %>% 
         mutate(id=substr(name,1,2)) %>% 
-        filter(id=="TB" & year==2020|
+        filter(id=="TB" & year>=2019|
                id=="TB" & year=="2015-2020") %>% 
         select(-(id)) %>% #drop the id col
         mutate(value=replace_na(value,0)) %>% 
@@ -452,24 +504,12 @@ pip_data <-
 
 
 
-# apply a fix to add HIV211 for 2020 only at country and regional level  
-
-# left_join(
-# pip_data %>% filter(name!="HIV211"),
-# extractPIP(indicators = "HIV211",yearFrom = 2020,yearTo = 2020) %>%
-#   select(ISOCountryCode,Year,Numerator) %>%
-#   rename(iso3=ISOCountryCode,year=Year,value=Numerator) %>% mutate(name="HIV211")
-# )
-
-
-
 # 
-# #  STEP 9 produce outputs ####
+#  STEP 9 produce outputs ####
 #   
 # # reduce to indicators to display indicators and  years
 
 # rename n_mdr_tx at this point before filtering to list
-
 pip_data <-
 pip_data %>% 
   mutate(name=ifelse(name=="TB_n_mdr_tx","n_mdr_tx",name))  %>% 
@@ -483,11 +523,12 @@ pip_data %>%
 pip_data <-
 pip_data %>% 
   mutate(id=paste0(name,year)) %>% 
-  right_join(indicator_year_list_db_2) 
+  right_join(indicator_year_list_db_2)
+
 
 
 # add back in eligibility criteria
-pip_data <- 
+pip_data <-
 pip_data %>% 
   left_join(elig_lookup %>% 
               mutate(across(everything(), ~replace(.,. =="Yes", "1")))) %>%
